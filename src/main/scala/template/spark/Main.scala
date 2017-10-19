@@ -1,10 +1,11 @@
 package template.spark
 
+import org.apache.spark.mllib.recommendation.{ALS, Rating}
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Dataset
-import org.apache.spark.sql.functions._
 
 
-final case class Rating(userId: Int, movieId: Int, rating: Double, timestamp: Int)
+final case class RawRatingData(userId: Int, movieId: Int, rating: Double, timestamp: Int)
 
 object Main extends InitSpark {
   def main(args: Array[String]) = {
@@ -23,18 +24,26 @@ object Main extends InitSpark {
     println("Reading from csv file: " + sourceFile)
     //val ratings: Dataset[Rating] = reader.csv(sourceFile).as[Rating]
 
-    val ratings: Dataset[Rating] = reader.format("com.databricks.spark.csv").load(sourceFile).as[Rating]
-    ratings.show(10)
+    val rawRatings: Dataset[RawRatingData] = reader.format("com.databricks.spark.csv").load(sourceFile).as[RawRatingData]
+    rawRatings.show(10)
 
-    val averageRating = ratings.groupBy("movieId").avg("rating")
+    val averageRating = rawRatings.groupBy("movieId").avg("rating")
     averageRating.show(10)
-    val counts = ratings.groupBy("movieId").count()
+    val counts = rawRatings.groupBy("movieId").count()
     counts.show(10)
     val averagesAndCount = counts.join(averageRating, "movieId")
     averagesAndCount.show(10)
 
 
     val topTen = averagesAndCount.orderBy("avg(rating)").show(10)
+
+    val ratings: RDD[Rating] = rawRatings.map((rrd: RawRatingData) => Rating(rrd.userId, rrd.movieId, rrd.rating)).rdd
+
+    // Build the recommendation model using ALS
+    val rank = 10
+    val numIterations = 10
+    val model = ALS.train(ratings, rank, numIterations, 0.01)
+
 //    persons.show(2)
 //    val averageAge = persons.agg(avg("age"))
 //                     .first.get(0).asInstanceOf[Double]
